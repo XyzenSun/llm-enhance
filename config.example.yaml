@@ -1,0 +1,158 @@
+# AI API middleware final config example
+
+server:
+  listen_address: 127.0.0.1
+  listen_port: 8080
+  read_timeout: 15s
+  write_timeout: 300s
+  idle_timeout: 60s
+  max_idle_client_num: 100
+
+security:
+  access_key: your-random-secret-key-here
+
+runtime:
+  default_timeout: 120s
+
+log:
+  enable: true
+  level: info
+  retention_days: 7
+
+llm_private_protect_config:
+  model: gpt-4o-mini
+  base_url: https://api.openai.com
+  api_key: sk-your-trusted-llm-key
+  temperature: 0.0
+  redis: ""
+
+channels:
+  openai:
+    enabled: true
+    llm_private_protect_enable: false
+    upstream:
+      base_url: https://api.openai.com
+      format: openai
+
+    channel_policy:
+      timeout: 60s
+      proxies: 
+        - http://127.0.0.1:7890
+      request_headers:
+        set:
+          Authorization: Bearer sk-openai-upstream-key
+          X-Proxy: ai-api-stronger
+          X-Request-Id: ${uuid}
+        delete:
+          - X-Internal-Debug
+
+      request_body:
+        model_rewrite:
+          gpt-5: gpt-5.5
+        system_prompt: 你是一个严格遵守用户要求的助手
+        max_tokens: 4096
+        temperature: 0.7
+        custom:
+          metadata/proxy: ai-api-stronger
+
+      response_headers:
+        set:
+          X-Served-By: ai-api-stronger
+        delete:
+          - Server
+          - X-Powered-By
+
+      response_status:
+        429: 400
+        500: 503
+
+    model_rules:
+      - model: gpt-5
+        enabled: true
+        llm_private_protect_enable: false
+        policy:
+          request_headers:
+            set:
+              X-Model-Rule: gpt-5
+          request_body:
+            model_rewrite:
+              gpt-5: gpt-5.5
+            max_tokens: 8192
+
+      - model: gpt-4o-mini
+        enabled: true
+        llm_private_protect_enable: true
+        policy:
+          timeout: 30s
+          request_headers:
+            set:
+              Authorization: Bearer sk-openai-mini-key
+              X-Model-Rule: gpt-4o-mini
+          request_body:
+            system_prompt: 你会优先给出简洁答案
+            temperature: 0.3
+          streaming_setting:
+            mode: nonstream_to_stream
+            max_buffer_bytes: 10485760
+            timeout: 120s
+
+  anthropic:
+    enabled: true
+    llm_private_protect_enable: false
+    upstream:
+      base_url: https://api.anthropic.com
+      format: anthropic
+
+    channel_policy:
+      timeout: 90s
+      request_headers:
+        set:
+          x-api-key: sk-ant-upstream-key
+          anthropic-version: 2023-06-01
+          X-Request-Id: ${uuid}
+        delete:
+          - X-Internal-Debug
+
+      request_body:
+        system_prompt: 你是一个严谨的助手
+        max_tokens: 4096
+        temperature: 0.5
+
+      response_headers:
+        set:
+          X-Served-By: ai-api-stronger
+
+    model_rules:
+      - model: claude-sonnet-4-5
+        enabled: true
+        policy:
+          request_headers:
+            set:
+              X-Model-Rule: claude-sonnet-4-5
+          response_status:
+            429: 400
+
+  gemini:
+    enabled: true
+    llm_private_protect_enable: false
+    upstream:
+      base_url: https://generativelanguage.googleapis.com
+      format: gemini
+
+    channel_policy:
+      timeout: 60s
+      request_headers:
+        set:
+          X-Goog-Api-Key: your-gemini-api-key
+
+      request_body:
+        system_prompt: 你是一个简洁的助手
+        max_tokens: 2048
+        temperature: 0.4
+        custom:
+          generationConfig/thinkingConfig/includeThoughts: true
+
+      response_status:
+        429: 400
+
+    model_rules: []
